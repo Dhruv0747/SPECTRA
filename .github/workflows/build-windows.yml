@@ -1,0 +1,46 @@
+name: Build SPECTRA Portable Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packager
+        run: python -m pip install --upgrade pip pyinstaller
+
+      - name: Build portable GUI
+        shell: cmd
+        run: pyinstaller --noconfirm --clean --windowed --name SPECTRA run_spectra.pyw
+
+      - name: Prepare portable folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path portable\SPECTRA\config | Out-Null
+          New-Item -ItemType Directory -Force -Path portable\SPECTRA\data | Out-Null
+          New-Item -ItemType Directory -Force -Path portable\SPECTRA\reports | Out-Null
+          New-Item -ItemType Directory -Force -Path portable\SPECTRA\tools | Out-Null
+          Copy-Item dist\SPECTRA\* portable\SPECTRA\ -Recurse -Force
+          Copy-Item config\settings.example.json portable\SPECTRA\config\settings.example.json -Force
+          Copy-Item README.txt portable\SPECTRA\README.txt -Force
+
+      - name: Upload SPECTRA portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: SPECTRA-Windows-Portable
+          path: portable\SPECTRA
+          if-no-files-found: error
