@@ -20,3 +20,5 @@ The project is intentionally self-contained in this SPECTRA folder. A later Wind
 
 SECURITY SCOPE
 Use only on your own systems/data or with explicit authorization. SPECTRA does not retrieve stolen plaintext credentials, bypass private social accounts, or identify unknown people from facial images.
+
+Build marker: SPECTRA v0.2 portable build.
