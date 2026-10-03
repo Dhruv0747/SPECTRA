@@ -4,6 +4,9 @@ import json
 import os
 import re
 import socket
+import subprocess
+import sys
+import time
 import tkinter as tk
 import urllib.error
 import urllib.parse
@@ -193,7 +196,64 @@ class SpectraApp(tk.Tk):
         self.settings = load_settings()
         self.findings = []
         self.selected_image = None
+        self.spiderfoot_process = None
         self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.after(500, self.ensure_spiderfoot)
+
+    def bundled_spiderfoot(self):
+        candidates = [
+            APP_DIR / "tools" / "spiderfoot" / "sf.py",
+            Path(sys.executable).resolve().parent / "tools" / "spiderfoot" / "sf.py",
+        ]
+        for p in candidates:
+            if p.exists():
+                return p
+        return None
+
+    def ensure_spiderfoot(self):
+        current = spiderfoot_status(self.settings.get("spiderfoot_url", ""))
+        if current.get("status") == "reachable":
+            self.status_var.set("OSINT engine ready")
+            return
+        sf = self.bundled_spiderfoot()
+        if not sf:
+            self.status_var.set("OSINT engine not bundled")
+            return
+        py = sf.parent / "runtime" / "python.exe"
+        if not py.exists():
+            self.status_var.set("OSINT runtime missing")
+            return
+        try:
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            self.spiderfoot_process = subprocess.Popen(
+                [str(py), str(sf), "-l", "127.0.0.1:5001"],
+                cwd=str(sf.parent), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=flags,
+            )
+            self.status_var.set("Starting OSINT engine...")
+            self.after(1500, self.wait_spiderfoot)
+        except Exception as e:
+            self.status_var.set("OSINT engine failed to start: " + str(e))
+
+    def wait_spiderfoot(self, attempts=0):
+        state = spiderfoot_status("http://127.0.0.1:5001")
+        if state.get("status") == "reachable":
+            self.settings["spiderfoot_url"] = "http://127.0.0.1:5001"
+            self.status_var.set("OSINT engine ready")
+            return
+        if attempts < 20:
+            self.after(750, lambda: self.wait_spiderfoot(attempts + 1))
+        else:
+            self.status_var.set("OSINT engine could not become ready")
+
+    def on_close(self):
+        if self.spiderfoot_process and self.spiderfoot_process.poll() is None:
+            try:
+                self.spiderfoot_process.terminate()
+            except Exception:
+                pass
+        self.destroy()
 
     def _build_ui(self):
         style = ttk.Style(self)
