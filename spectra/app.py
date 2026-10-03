@@ -139,6 +139,51 @@ def spiderfoot_status(base_url):
         return {"status": "unreachable", "url": url, "message": str(e)}
 
 
+def hibp_breaches(account, api_key):
+    if not api_key:
+        return {"status": "not_configured", "message": "Add a HIBP API key in Settings."}
+    url = "https://haveibeenpwned.com/api/v3/breachedaccount/" + urllib.parse.quote(account, safe="") + "?truncateResponse=false"
+    req = urllib.request.Request(url, headers={"hibp-api-key": api_key, "User-Agent": "SPECTRA/0.2"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read().decode("utf-8", errors="replace"))
+        return {"status": "ok", "count": len(data), "breaches": [
+            {"name": x.get("Name"), "domain": x.get("Domain"), "breach_date": x.get("BreachDate"),
+             "data_classes": x.get("DataClasses", []), "verified": x.get("IsVerified")} for x in data
+        ]}
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return {"status": "ok", "count": 0, "breaches": []}
+        return {"status": "error", "message": f"HIBP HTTP {e.code}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def spiderfoot_start(base_url, target):
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        return {"status": "not_configured"}
+    payload = urllib.parse.urlencode({
+        "scanname": "SPECTRA-" + datetime.now().strftime("%Y%m%d-%H%M%S"),
+        "scantarget": target,
+        "modulelist": "",
+        "typelist": "",
+        "usecase": "passive",
+    }).encode()
+    req = urllib.request.Request(base + "/startscan", data=payload,
+        headers={"User-Agent": "SPECTRA/0.2", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            raw = r.read().decode("utf-8", errors="replace")
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = raw[:1000]
+        return {"status": "started", "response": data, "mode": "passive", "server": base}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "server": base}
+
+
 class SpectraApp(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -167,12 +212,14 @@ class SpectraApp(tk.Tk):
         search.pack(fill="x", padx=14, pady=(0, 10))
 
         self.target_var = tk.StringVar()
-        self.type_var = tk.StringVar(value="Type: —")
+        self.type_var = tk.StringVar(value="Auto")
         entry = ttk.Entry(search, textvariable=self.target_var, font=("Segoe UI", 13))
         entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
         entry.bind("<KeyRelease>", lambda e: self._refresh_type())
         entry.bind("<Return>", lambda e: self.run_scan())
-        ttk.Label(search, textvariable=self.type_var, width=18).grid(row=0, column=1, padx=(0, 8))
+        self.type_choice = ttk.Combobox(search, textvariable=self.type_var, state="readonly", width=13,
+            values=["Auto", "Name", "Username", "Email", "Phone", "Domain", "IP"])
+        self.type_choice.grid(row=0, column=1, padx=(0, 8))
         ttk.Button(search, text="SCAN", command=self.run_scan).grid(row=0, column=2, padx=(0, 8))
         ttk.Button(search, text="Upload Image", command=self.pick_image).grid(row=0, column=3, padx=(0, 8))
         ttk.Button(search, text="Settings", command=self.open_settings).grid(row=0, column=4)
@@ -207,8 +254,7 @@ class SpectraApp(tk.Tk):
         ttk.Label(self, textvariable=self.status_var, relief="sunken", anchor="w").pack(fill="x", side="bottom")
 
     def _refresh_type(self):
-        t = classify_target(self.target_var.get())
-        self.type_var.set(f"Type: {t.upper() if t != 'unknown' else '—'}")
+        return
 
     def add_finding(self, title, source, detail):
         item = {"title": title, "source": source, "detail": detail}
@@ -235,7 +281,7 @@ class SpectraApp(tk.Tk):
         if not target:
             messagebox.showinfo("SPECTRA", "Enter a name, email, phone, username, domain or IP.")
             return
-        typ = classify_target(target)
+        typ = classify_target(target) if self.type_var.get() == "Auto" else self.type_var.get().lower()
         self.status_var.set(f"Scanning {typ}: {target}")
         self.add_finding("Target classification", "SPECTRA", {"target": target, "type": typ})
 
@@ -247,19 +293,15 @@ class SpectraApp(tk.Tk):
                 self.add_finding("DNS resolution", "Local DNS", {"domain": target, "ips": ips})
             except Exception as e:
                 self.add_finding("DNS resolution", "Local DNS", {"status": "error", "message": str(e)})
-        elif typ in ("email", "username", "name", "phone"):
-            self.add_finding(
-                "Public-footprint workflow",
-                "SPECTRA",
-                {
-                    "status": "foundation",
-                    "message": "MVP classifies the target and provides connector slots. SpiderFoot automation is the next integration layer.",
-                    "target": target,
-                    "target_type": typ,
-                },
-            )
+        if typ == "email":
+            self.add_finding("Breach exposure", "Have I Been Pwned",
+                hibp_breaches(target, self.settings.get("hibp_api_key", "")))
 
-        self.add_finding("SpiderFoot connector", "SpiderFoot", spiderfoot_status(self.settings.get("spiderfoot_url", "")))
+        sf = spiderfoot_status(self.settings.get("spiderfoot_url", ""))
+        self.add_finding("SpiderFoot connector", "SpiderFoot", sf)
+        if sf.get("status") == "reachable":
+            self.add_finding("SpiderFoot passive scan", "SpiderFoot",
+                spiderfoot_start(self.settings.get("spiderfoot_url", ""), target))
         self.status_var.set("Scan complete")
 
     def pick_image(self):
