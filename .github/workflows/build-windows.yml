@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - name: Install packager
         run: python -m pip install --upgrade pip pyinstaller
@@ -36,6 +36,7 @@ jobs:
         run: |
           python -m venv tools\spiderfoot\runtime
           tools\spiderfoot\runtime\Scripts\python.exe -m pip install --upgrade pip
+          tools\spiderfoot\runtime\Scripts\python.exe -m pip install "Cython<3" "PyYAML==6.0.1"
           tools\spiderfoot\runtime\Scripts\python.exe -m pip install -r tools\spiderfoot\requirements.txt
           Move-Item tools\spiderfoot\runtime\Scripts\python.exe tools\spiderfoot\runtime\python.exe
           Copy-Item tools\spiderfoot\runtime\Scripts\pythonw.exe tools\spiderfoot\runtime\pythonw.exe -ErrorAction SilentlyContinue
