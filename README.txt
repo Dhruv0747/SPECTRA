@@ -1,7 +1,13 @@
 SPECTRA — Digital Exposure & OSINT Auditor
 Powered by Dhruv Kaushik
 
-v0.4.0 INVESTIGATION WORKSPACE
+v0.5.0 INVESTIGATION WORKSPACE
+- Client report: visual profile and exposure cards, clickable evidence sources,
+  supplied information separated from observations, technical appendix collapsed.
+- GitHub username searches include public avatars, bios, account dates, websites
+  and social links published by the account. Links are not proof of ownership.
+  Report avatars load from GitHub when viewed online; no reverse-image search
+  or Instagram image collection is performed.
 - Free DNS enrichment for emails, domains and URLs: A, AAAA, MX, NS, TXT and
   DMARC queries. Email lookup sends only the domain to Google Public DNS;
   these observations do not verify mailbox existence or personal identity.

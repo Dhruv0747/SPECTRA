@@ -18,7 +18,7 @@ BG, PANEL, TEXT, MUTED, ACCENT = '#0b1220', '#121e31', '#e4ecf7', '#95a9c2', '#4
 class SpectraApp(tk.Tk):
     def __init__(self, start_engine=True, root=APP_DIR):
         super().__init__()
-        self.title('SPECTRA · Investigation Workspace (0.4.0)')
+        self.title('SPECTRA · Investigation Workspace (0.5.0)')
         self.geometry('1380x850')
         self.minsize(1060, 700)
         self.configure(bg=BG)
@@ -203,7 +203,7 @@ class SpectraApp(tk.Tk):
     def _results(self, page):
         row = ttk.Frame(page)
         row.pack(fill='x', pady=(0, 8))
-        self.button(row, 'Export this report', self.generate_report, True)
+        self.button(row, 'Open client report', self.generate_report, True)
         self.button(row, 'Run another investigation', lambda: self.show_page('Investigation'))
         self.results_query = tk.StringVar()
         search = ttk.Entry(row, textvariable=self.results_query, width=24)

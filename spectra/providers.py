@@ -335,9 +335,28 @@ class Scanner:
         profile = data.get('html_url', '')
         self.add('Public GitHub profile', 'GitHub', t,
                  {'summary': f"Public account {data.get('login')}; matching username alone does not prove identity.",
-                  'login': data.get('login'), 'name': data.get('name'), 'bio': data.get('bio'), 'public_repos': data.get('public_repos'), 'profile': profile},
+                  'login': data.get('login'), 'name': data.get('name'), 'bio': data.get('bio'),
+                  'public_repos': data.get('public_repos'), 'profile': profile,
+                  'avatar_url': data.get('avatar_url'), 'website': data.get('blog'),
+                  'account_created': data.get('created_at'), 'followers': data.get('followers'),
+                  'match_basis': 'Exact username lookup; ownership by the client is not verified.'},
                  path, reference=url, confidence='LOW', relation='POSSIBLE_PROFILE', object_type='PROFILE', object_value=profile,
                  remediation='Verify ownership using independent evidence before attributing this profile to a person.')
+        social_url = url + '/social_accounts'
+        social = self.json(social_url, {'Accept': 'application/vnd.github+json'})
+        if not isinstance(social, list):
+            raise ProviderError('Public profile retained; linked social accounts returned an invalid response.')
+        for row in social:
+            link = row.get('url', '')
+            if not isinstance(link, str) or urllib.parse.urlsplit(link).scheme not in ('http', 'https'):
+                continue
+            self.add('Publicly linked social account', 'GitHub', t,
+                     {'summary': f"The GitHub profile links to {row.get('provider') or 'another platform'}: {link}.",
+                      'profile': link, 'linked_from': profile,
+                      'match_basis': 'Link published on the GitHub profile; destination ownership is not independently verified.'},
+                     path, reference=social_url, confidence='LOW', relation='LINKED_PROFILE',
+                     object_type='PROFILE', object_value=link,
+                     remediation='Review the source profile and destination before attributing either account to the client.')
         return []
 
     def hibp(self, t, path):

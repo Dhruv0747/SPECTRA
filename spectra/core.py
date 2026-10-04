@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 from .results import results, finding_details, PRIORITY
+from .presentation import client_summary
 
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent.parent
 CONFIDENCE = {'LOW': 0, 'MEDIUM': 1, 'HIGH': 2, 'CONFIRMED': 3}
@@ -249,6 +250,7 @@ def report_html(case):
     score, counts = risk(case)
     rows = []
     items = results(case)
+    visual_summary = client_summary(items)
     for f in items:
         evidence = ''.join('<li>' + esc(e['provider']) + ' · ' + esc(e['timestamp']) +
                            ' · ' + esc(e.get('reference', '')) + '<br>Path: ' +
@@ -262,10 +264,12 @@ def report_html(case):
     scans += ''.join('<li>' + esc(row['provider']) + ' · ' + esc(row['target']['value']) + ' · ' + esc(row['status']) + ' · ' + str(row['findings']) + ' evidence records</li>' for row in (case['scans'][-1] if case['scans'] else {}).get('coverage', []))
     return f'''<!doctype html><html lang="en"><meta charset="utf-8"><title>SPECTRA · {esc(case['name'])}</title>
 <style>body{{font:15px/1.6 Segoe UI,Arial;background:#f3f5fa;color:#182338;max-width:1040px;margin:40px auto;padding:0 24px}}header{{background:#101c31;color:white;padding:32px;border-radius:14px}}h1{{letter-spacing:5px}}section{{background:white;padding:24px;margin:16px 0;border:1px solid #dce3ee;border-radius:10px}}.tag{{color:#356483;font-weight:bold}}pre{{white-space:pre-wrap;overflow-wrap:anywhere}}li{{overflow-wrap:anywhere}}@media print{{body{{background:white;margin:0}}details{{display:block}}section{{break-inside:avoid}}}}</style>
+<style>.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}}.client-card{{border:1px solid #dce3ee;border-radius:12px;padding:20px;overflow-wrap:anywhere;background:#fafcff}}.avatar{{width:140px;height:140px;object-fit:contain;border-radius:12px}}figure{{margin:0}}figcaption{{font-size:12px;color:#53637b}}dt{{font-weight:bold}}dd{{margin:0 0 10px}}a{{color:#155ac4}}summary{{cursor:pointer;font-weight:bold}}@media print{{.cards{{display:block}}.client-card{{break-inside:avoid;margin:12px 0}}}}</style>
 <header><h1>SPECTRA</h1><p>Digital Exposure &amp; OSINT Auditor · Powered by Dhruv Kaushik</p><h2>{esc(case['name'])}</h2><p>Client: {esc(case['client'])} · Generated {esc(now())}</p></header>
 <section><h2>Executive summary</h2><p>{len(case['targets'])} entered targets · {len(items)} discoveries / context records · {counts['HIGH']} high priority · {counts['MEDIUM']} need review.</p>
 <p>Assessment: <b>{'Review reported exposures' if counts['HIGH'] or counts['MEDIUM'] else 'No security conclusion established'}</b>. Unverified source claims are not confirmed breaches. Collections can overlap. Missing observations do not establish safety.</p><p>Authorization: {esc(case['authorization'])}</p>
-<h3>Entered targets (not discoveries)</h3><ul>{''.join('<li>'+esc(t['type'])+': '+esc(t['value'])+'</li>' for t in case['targets'])}</ul><p>Entering identifiers in the same case does not prove that they belong to the same person.</p></section>
+<details><summary>Information supplied by the client (not discoveries)</summary><ul>{''.join('<li>'+esc(t['type'])+': '+esc(t['value'])+'</li>' for t in case['targets'])}</ul><p>Entering identifiers in the same case does not prove that they belong to the same person.</p></details></section>
+{visual_summary}
 <section><h2>Methodology &amp; limitations</h2><p>Configured passive providers and local analysis only. Results represent observations at the recorded times. Public profiles and username matches do not establish personal identity. Missing API access, errors, cancelled scans, and source coverage limit conclusions. Open ports alone do not establish a vulnerability. No plaintext passwords are retained.</p><h3>Scan coverage</h3><ul>{scans or '<li>No scans recorded.</li>'}</ul></section>
 <section><h2>Relationships</h2><ul>{relationships or '<li>No relationships observed.</li>'}</ul></section>
-<h2>Findings, evidence &amp; remediation</h2>{''.join(rows) or '<section>No findings recorded.</section>'}</html>'''
+<details><summary>Full technical evidence appendix</summary>{''.join(rows) or '<section>No findings recorded.</section>'}</details></html>'''
