@@ -1,59 +1,26 @@
-# SPECTRA Roadmap
+# SPECTRA status and remaining roadmap
 
-## Current foundation
-- Portable Windows GUI build
-- Universal target types/manual override
-- Shodan foundation
-- HIBP breach/password foundation
-- image hash/metadata foundation
-- SpiderFoot bundled runtime/auto-start architecture
-- GitHub Actions portable build
-- HTML report foundation
+## Implemented in v0.3
 
-## Milestone 1 — Engine reliability
-- Verify bundled SpiderFoot starts on clean Windows
-- readiness/health UI
-- clean shutdown/recovery
-- smoke tests
+- Desktop workspace and functional case lifecycle with import/export/archive.
+- Background scans, progress/status, cancellation, retained evidence and report export.
+- Typed entities/relationships, source timestamps, pivot paths and deduplication.
+- DNS-derived IP pivots with visited-target suppression and adjustable depth.
+- Keyless DNS, InternetDB, public GitHub profiles; configured HIBP/Shodan.
+- Bundled SpiderFoot source/runtime, startup/readiness, scan polling, evidence ingestion, stop and owned process shutdown.
+- Image hashes/metadata and same-run duplicate/similarity candidates.
+- HIBP password range privacy, HTML reports, pan/zoom graph and evidence filters.
+- Windows build, offline unit/GUI tests and a relocated engine smoke gate.
 
-## Milestone 2 — Real results ingestion
-- scan IDs/status/progress
-- SpiderFoot result retrieval
-- normalized entities/events
-- evidence/provenance
-- cancellation
+## Still outstanding before a production-complete claim
 
-## Milestone 3 — Correlation
-- dedupe
-- pivot engine/loop prevention
-- confidence scoring
-- contradictions
-- graph data model
+- Clean Windows VM acceptance and manual visual/accessibility QA.
+- Live authenticated HIBP/Shodan acceptance using owner-provided keys.
+- Validation of individual SpiderFoot modules against their evolving sources.
+- Stronger encrypted local credential storage, cache policies and large-case indexing.
+- Advanced multi-provider correlation, contradiction handling and user review workflow.
+- Additional explicitly supported profile/public-web/reverse-image occurrence providers.
+- A native PDF exporter (browser print is supported now).
+- Full custom-connector SDK and detailed per-module UI configuration.
 
-## Milestone 4 — Connector expansion
-- DNS/RDAP/CT
-- permitted public username/profile connectors
-- passive infrastructure tools where justified
-- web/history/document metadata
-- keyless-first strategy
-
-## Milestone 5 — Image intelligence
-- EXIF + hashes + perceptual hashes
-- local near-duplicate search
-- permitted public reverse-image occurrence providers
-- source/date evidence
-
-## Milestone 6 — Product UX
-- cases/history
-- professional dashboard
-- graph
-- progress/cancel
-- connector health/settings
-- developer mode
-
-## Milestone 7 — Reporting and release
-- risk/remediation engine
-- polished HTML/PDF
-- tests
-- Windows clean-machine verification
-- tagged stable release + checksums
+The master developer prompt remains the longer-term product specification. No unsupported feature is represented as complete.

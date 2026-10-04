@@ -1,0 +1,49 @@
+"""Offline GUI integration: real Tk, background image scan, persistence and graph."""
+import tempfile
+import time
+import unittest
+from pathlib import Path
+from PIL import Image
+from spectra.app import SpectraApp
+from spectra.core import target, report_html
+
+
+class GuiTests(unittest.TestCase):
+    def test_case_image_scan_graph_and_reopen(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app = SpectraApp(start_engine=False, root=folder)
+            errors = []
+            app.report_callback_exception = lambda *args: errors.append(args)
+            try:
+                app.case = app.store.create('GUI smoke', 'Test', 'Local synthetic images only')
+                for name in ('a.png', 'b.png'):
+                    path = Path(folder)/name
+                    Image.new('RGB', (32, 24), '#18aabb').save(path)
+                    app.case['targets'].append(target(str(path), 'Image'))
+                app.refresh()
+                app.run_scan()
+                deadline = time.monotonic() + 10
+                while app.busy() and time.monotonic() < deadline:
+                    app.update()
+                    time.sleep(.01)
+                self.assertFalse(app.busy(), 'Worker did not complete')
+                self.assertEqual(app.case['scans'][-1]['status'], 'COMPLETED')
+                self.assertEqual(len(app.case['findings']), 3)
+                self.assertTrue(any(f['relation'] == 'IDENTICAL_TO' for f in app.case['findings']))
+                for page in app.pages:
+                    app.show_page(page)
+                    app.update()
+                app.draw_graph()
+                self.assertTrue(app.canvas.find_all())
+                app.findings_tree.selection_set(app.case['findings'][0]['id'])
+                app.show_finding()
+                self.assertIn('Image', app.detail.get('1.0', 'end'))
+                saved = app.store.load(Path(folder)/'cases'/f"{app.case['id']}.json")
+                self.assertEqual(len(saved['findings']), 3)
+                self.assertIn('Exact image duplicate', report_html(saved))
+                self.assertFalse(errors, errors)
+            finally:
+                app.on_close()
+
+
+if __name__ == '__main__': unittest.main()

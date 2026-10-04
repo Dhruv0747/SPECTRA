@@ -1,8 +1,9 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-py -m pip install --upgrade pyinstaller
-pyinstaller --noconfirm --clean --windowed --name SPECTRA --add-data "config;config" --add-data "assets;assets" run_spectra.pyw
+py -m pip install -r requirements-build.txt
+if errorlevel 1 exit /b 1
+py scripts\build_windows.py
+if errorlevel 1 exit /b 1
 echo.
-echo Build complete. See dist\SPECTRA\
-pause
+echo Build complete. See dist\SPECTRA-Windows-Portable.zip

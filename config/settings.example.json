@@ -1,5 +1,19 @@
 {
   "shodan_api_key": "",
+  "hibp_api_key": "",
   "spiderfoot_url": "http://127.0.0.1:5001",
-  "hibp_api_key": ""
+  "spiderfoot_enabled": true,
+  "auto_pivot": false,
+  "pivot_depth": 1,
+  "timeout": 12,
+  "retries": 1,
+  "developer_mode": false,
+  "connectors": [
+    "DNS",
+    "InternetDB",
+    "GitHub",
+    "HIBP",
+    "Shodan",
+    "Image"
+  ]
 }

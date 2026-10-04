@@ -1,22 +1,24 @@
-# SPECTRA Architecture
+# SPECTRA architecture
 
-## Core flow
-Input/Case → Orchestrator → Connector selection → Providers/Engines → Normalizer → Deduplicator → Correlator → Confidence → Evidence Store → Graph → Risk/Remediation → Report.
+The Windows desktop app is a local evidence workspace. It does not require a browser or terminal for normal operation.
 
-## Layers
-1. GUI — investigation/cases/graph/reports/connectors/settings/logs.
-2. Case service — local case lifecycle and authorization metadata.
-3. Orchestrator — source selection, jobs, progress, cancellation, pivot limits.
-4. Connector SDK — stable adapter interface for SpiderFoot/Shodan/HIBP/etc.
-5. Normalized data model — typed entities, relationships and provenance.
-6. Correlation engine — dedupe, pivots, confidence and contradictions.
-7. Evidence store — source records, timestamps and raw evidence references.
-8. Reporting — client-friendly HTML/PDF.
-9. Runtime manager — bundled engines/process readiness/recovery/shutdown.
+- `spectra/app.py`: Tk dashboard, navigation, case actions, graph, settings, report and password dialogs. Background workers emit events into a queue; only the UI thread touches Tk and case state.
+- `spectra/core.py`: validated targets, atomic JSON storage, stable finding/entity IDs, provenance-preserving deduplication, conservative confidence, exposure indicator and escaped offline HTML reports.
+- `spectra/providers.py`: passive provider adapters, local image analysis, password range checks, sequential cancellable orchestration and an owned SpiderFoot process manager.
+- `scripts/build_spiderfoot.py`: checksum-verified upstream source plus relocatable embedded CPython. Upstream engine source is preserved with its license; dependency adaptations are recorded in the bundle.
+- `scripts/build_windows.py`: tests, isolated staging, PyInstaller, notices, GUI smoke, relocated engine smoke, ZIP and SHA-256. Local cases/settings are never copied to staging.
+- `scripts/smoke_engine.py`: real readiness, storage-only loopback scan, evidence retrieval and process-tree cleanup.
 
-## Security invariants
-- Secrets never enter Git.
-- Plaintext passwords are never persisted.
-- Provider failures are isolated.
-- Public/authorized defensive scope only.
-- Unknown-person biometric identification is out of scope.
+## Data lifecycle
+
+A case stores ID, name, client, authorization scope, timestamps, targets, findings, scans and report references. Findings contain typed subject/object entities, an explicit relationship, severity/confidence, remediation and a list of independent observations. Each observation carries provider, timestamp, reference, original target, pivot path and raw evidence. Deduplication merges observations rather than dropping their sources. Imported cases receive a new UUID.
+
+Workers never write cases or Tk widgets. UI queue processing applies observations and saves atomically; scan status is recorded separately from findings. Provider failures are coverage warnings, not evidence of no exposure. Interrupted scans retain partial results.
+
+## Runtime boundaries
+
+SPECTRA launches only the bundled engine on loopback, redirects its data/cache/logs into the portable folder, and only stops processes it owns. Existing configured servers are reused. HTTP calls use finite timeouts; stop prevents queued work and requests SpiderFoot cancellation. The SpiderFoot integration uses upstream ping/startscan/scanstatus/scaneventresults/stopscan endpoints. It does not merely open the web UI.
+
+## Security and limits
+
+Passwords and full password hashes never enter cases, reports or logs. API credentials are currently local plaintext settings and never included in artifacts or exports. Reports escape all case/evidence text. No result-count or case-count cap is imposed. Provider quotas, local resources and HTTP timeouts still apply. Username equality and engine events are never treated as verified personal identity.

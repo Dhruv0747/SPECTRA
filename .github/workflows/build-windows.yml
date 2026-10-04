@@ -1,71 +1,35 @@
 name: Build SPECTRA Portable Windows
-
 on:
   workflow_dispatch:
   push:
+    branches: [main, 'codex/**']
+  pull_request:
     branches: [main]
-
 permissions:
   contents: read
-
 jobs:
   build-windows:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
-
-      - name: Install packager
-        run: python -m pip install --upgrade pip pyinstaller
-
-      - name: Download SpiderFoot
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://github.com/smicallef/spiderfoot/archive/refs/tags/v4.0.zip" -OutFile spiderfoot.zip
-          Expand-Archive spiderfoot.zip -DestinationPath vendor
-          New-Item -ItemType Directory -Force -Path tools\spiderfoot | Out-Null
-          Copy-Item vendor\spiderfoot-4.0\* tools\spiderfoot\ -Recurse -Force
-
-      - name: Build bundled SpiderFoot Python runtime
-        shell: pwsh
-        run: |
-          python -m venv tools\spiderfoot\runtime
-          tools\spiderfoot\runtime\Scripts\python.exe -m pip install "pip<24" "setuptools<69" wheel
-          $req = Get-Content tools\spiderfoot\requirements.txt
-          $req = $req | ForEach-Object {
-            if ($_ -match '(?i)^\s*pyyaml') { 'PyYAML==6.0.1' } else { $_ }
-          }
-          $req | Set-Content tools\spiderfoot\requirements-spectra.txt
-          Write-Host "SPECTRA SpiderFoot dependency manifest:"
-          Get-Content tools\spiderfoot\requirements-spectra.txt
-          tools\spiderfoot\runtime\Scripts\python.exe -m pip install -r tools\spiderfoot\requirements-spectra.txt
-          Move-Item tools\spiderfoot\runtime\Scripts\python.exe tools\spiderfoot\runtime\python.exe
-          Copy-Item tools\spiderfoot\runtime\Scripts\pythonw.exe tools\spiderfoot\runtime\pythonw.exe -ErrorAction SilentlyContinue
-
-      - name: Build portable GUI
-        shell: cmd
-        run: pyinstaller --noconfirm --clean --windowed --name SPECTRA run_spectra.pyw
-
-      - name: Prepare portable folder
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path portable\SPECTRA\config | Out-Null
-          New-Item -ItemType Directory -Force -Path portable\SPECTRA\data | Out-Null
-          New-Item -ItemType Directory -Force -Path portable\SPECTRA\reports | Out-Null
-          New-Item -ItemType Directory -Force -Path portable\SPECTRA\tools | Out-Null
-          Copy-Item dist\SPECTRA\* portable\SPECTRA\ -Recurse -Force
-          Copy-Item config\settings.example.json portable\SPECTRA\config\settings.example.json -Force
-          Copy-Item README.txt portable\SPECTRA\README.txt -Force
-          Copy-Item tools\spiderfoot portable\SPECTRA\tools\spiderfoot -Recurse -Force
-
-      - name: Upload SPECTRA portable ZIP
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+            requirements-spiderfoot.lock
+      - name: Install build requirements
+        run: python -m pip install -r requirements-build.txt
+      - name: Test, package and verify GUI and bundled engine
+        run: python scripts/build_windows.py
+      - name: Upload verified portable package
         uses: actions/upload-artifact@v4
         with:
           name: SPECTRA-Windows-Portable
-          path: portable\SPECTRA
+          path: |
+            dist/SPECTRA-Windows-Portable.zip
+            dist/SPECTRA-Windows-Portable.zip.sha256
           if-no-files-found: error
