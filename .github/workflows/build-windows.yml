@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.9"
 
       - name: Install packager
         run: python -m pip install --upgrade pip pyinstaller
@@ -35,9 +35,15 @@ jobs:
         shell: pwsh
         run: |
           python -m venv tools\spiderfoot\runtime
-          tools\spiderfoot\runtime\Scripts\python.exe -m pip install --upgrade pip
-          tools\spiderfoot\runtime\Scripts\python.exe -m pip install "Cython<3" "PyYAML==6.0.1"
-          tools\spiderfoot\runtime\Scripts\python.exe -m pip install -r tools\spiderfoot\requirements.txt
+          tools\spiderfoot\runtime\Scripts\python.exe -m pip install "pip<24" "setuptools<69" wheel
+          $req = Get-Content tools\spiderfoot\requirements.txt
+          $req = $req | ForEach-Object {
+            if ($_ -match '(?i)^\s*pyyaml') { 'PyYAML==6.0.1' } else { $_ }
+          }
+          $req | Set-Content tools\spiderfoot\requirements-spectra.txt
+          Write-Host "SPECTRA SpiderFoot dependency manifest:"
+          Get-Content tools\spiderfoot\requirements-spectra.txt
+          tools\spiderfoot\runtime\Scripts\python.exe -m pip install -r tools\spiderfoot\requirements-spectra.txt
           Move-Item tools\spiderfoot\runtime\Scripts\python.exe tools\spiderfoot\runtime\python.exe
           Copy-Item tools\spiderfoot\runtime\Scripts\pythonw.exe tools\spiderfoot\runtime\pythonw.exe -ErrorAction SilentlyContinue
 
