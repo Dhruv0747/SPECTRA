@@ -4,7 +4,9 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import tempfile
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -22,8 +24,24 @@ def smoke_engine(bundle):
         env = os.environ.copy()
         env['PATH'] = str(Path(os.environ['SystemRoot'])/'System32')
         for key, name in [('SPIDERFOOT_DATA','data'),('SPIDERFOOT_CACHE','cache'),('SPIDERFOOT_LOGS','logs')]: env[key] = str(Path(tmp)/name)
+        # Exercise the app's actual profile selection without enabling hundreds
+        # of external lookups in a packaging test. The real upstream startscan
+        # handler selects the storage module through its case-sensitive group.
+        launcher = Path(tmp) / 'profile_smoke.py'
+        launcher.write_text('''import runpy, sys, sfwebui
+original_init = sfwebui.SpiderFootWebUi.__init__
+def isolated_init(self, *args, **kwargs):
+    original_init(self, *args, **kwargs)
+    for name, config in self.config['__modules__'].items():
+        config['group'] = ['Passive'] if name == 'sfp__stor_db' else []
+sfwebui.SpiderFootWebUi.__init__ = isolated_init
+if __name__ == '__main__':
+    script = sys.argv.pop(1)
+    sys.argv[0] = script
+    runpy.run_path(script, run_name='__main__')
+''', encoding='utf-8')
         with (Path(tmp)/'startup.log').open('w') as log:
-            p = subprocess.Popen([str(runtime), str(engine/'sf.py'), '-l', f'127.0.0.1:{port}'], cwd=engine, env=env,
+            p = subprocess.Popen([str(runtime), str(launcher), str(engine/'sf.py'), '-l', f'127.0.0.1:{port}'], cwd=engine, env=env,
                                  stdout=log, stderr=log, creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
             try:
                 def get(endpoint, data=None):
@@ -35,14 +53,18 @@ def smoke_engine(bundle):
                         if get('/ping')[0] == 'SUCCESS': break
                     except OSError: time.sleep(.5)
                 else: raise RuntimeError('Engine readiness timed out')
-                result = get('/startscan', urllib.parse.urlencode({'scanname':'SPECTRA portable smoke','scantarget':'127.0.0.1','modulelist':'sfp__stor_db','typelist':'','usecase':''}).encode())
-                if result[0] != 'SUCCESS': raise RuntimeError('Engine rejected smoke scan')
-                for _ in range(40):
-                    status = get('/scanstatus?id='+result[1])
-                    if status[5] in ('FINISHED','ERROR-FAILED','ABORTED'): break
-                    time.sleep(.5)
-                if status[5] != 'FINISHED': raise RuntimeError('Engine smoke scan did not finish')
-                if not get('/scaneventresults?id='+result[1]): raise RuntimeError('Engine produced no seed evidence')
+                sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+                from spectra.core import DEFAULTS, target
+                from spectra.providers import Scanner, Engine
+                events = []
+                scanner = Scanner(dict(DEFAULTS, spiderfoot_url=base, connectors=[], retries=0),
+                                  lambda k, v: events.append((k, v)), threading.Event(), Engine(bundle))
+                for value, kind in [('Jane Doe', 'Name'), ('+12025550100', 'Phone'), ('jane@example.com', 'Email')]:
+                    before = sum(k == 'finding' for k, _ in events)
+                    t = target(value, kind)
+                    scanner.spiderfoot(t, [t])
+                    if sum(k == 'finding' for k, _ in events) <= before:
+                        raise RuntimeError(kind + ' scan returned no seed evidence')
             except Exception:
                 log.flush()
                 print((Path(tmp)/'startup.log').read_text(errors='replace'))
@@ -51,4 +73,4 @@ def smoke_engine(bundle):
                 subprocess.run(['taskkill','/PID',str(p.pid),'/T','/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0), timeout=10)
                 p.wait(timeout=10)
-    print('Portable engine: readiness, scan, evidence and shutdown passed.')
+    print('Portable engine: default Passive profile, name/phone/email scans, evidence and shutdown passed.')

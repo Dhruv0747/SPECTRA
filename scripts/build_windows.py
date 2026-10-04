@@ -65,7 +65,8 @@ def main():
             f"{checksum}  {archive.name}\n", encoding="ascii")
         # Keep an immediately runnable copy too, without replacing existing user data.
         destination = output / "SPECTRA-v0.3"
-        shutil.copytree(bundle, destination, dirs_exist_ok=True)
+        if '--no-install' not in sys.argv:
+            shutil.copytree(bundle, destination, dirs_exist_ok=True)
         print(f"Smoke test passed. Portable GUI: {archive}")
 
 

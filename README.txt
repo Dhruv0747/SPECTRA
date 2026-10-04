@@ -1,7 +1,10 @@
 SPECTRA — Digital Exposure & OSINT Auditor
 Powered by Dhruv Kaushik
 
-v0.3 INVESTIGATION WORKSPACE
+v0.3.1 INVESTIGATION WORKSPACE
+- Fix: default investigations use SpiderFoot's case-sensitive Passive profile.
+  Name, phone and email startup/progress/cancellation have a live acceptance test.
+  Rejected sources are visible in Investigation; all-source failure reports FAILED.
 - Dark Windows dashboard with Investigation, Cases, Graph, Reports, Connectors,
   Settings and Logs views.
 - Create/open/save/archive/import/export cases with client and assessment scope.
@@ -40,6 +43,8 @@ The build-time pip bootstrap is checksum pinned. If upstream changes it, the
 build fails rather than executing changed bytes; review before updating the pin.
 For source development: pip install -r requirements.txt, then run_spectra.pyw.
 Tests: python -m unittest discover -s tests -v
+Optional live acceptance (uses synthetic clues and real passive providers):
+  python scripts/acceptance_engine.py dist/SPECTRA-v0.3
 
 DATA AND SECRETS
 Cases, settings, reports, cache and engine data remain inside the application

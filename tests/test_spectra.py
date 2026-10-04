@@ -5,6 +5,7 @@ import json
 import tempfile
 import threading
 import unittest
+import urllib.parse
 from pathlib import Path
 from unittest.mock import patch, Mock
 from PIL import Image
@@ -83,6 +84,13 @@ class ProviderTests(unittest.TestCase):
         dns.assert_not_called()
         self.assertEqual(self.events[-1][1]['status'], 'CANCELLED')
 
+    def test_all_sources_rejected_is_failed_not_completed(self):
+        scanner = self.scanner(connectors=[], spiderfoot_enabled=True)
+        with patch.object(scanner, 'spiderfoot', side_effect=ProviderError('Scan rejected')):
+            scanner.run([target('Jane Doe', 'Name')])
+        self.assertEqual(self.events[-1][1]['status'], 'FAILED')
+        self.assertFalse(any(k == 'finding' for k, _ in self.events))
+
     def test_pivot_deduplicates_targets(self):
         scanner = self.scanner(auto_pivot=True, pivot_depth=3, connectors=['DNS', 'InternetDB'])
         with patch.object(scanner, 'dns', return_value=[target('8.8.8.8'), target('8.8.8.8')]), patch.object(scanner, 'internetdb', return_value=[target('example.com')]) as lookup:
@@ -122,6 +130,30 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]['confidence'], 'LOW')
         self.assertEqual(findings[0]['evidence'][0]['raw']['scan_id'], 'scan-1')
+
+    def test_spiderfoot_passive_profile_and_identity_inputs(self):
+        examples = [('Jane Doe', 'Name', '"Jane Doe"'),
+                    ('+1 (202) 555-0100', 'Phone', '+12025550100'),
+                    ('jane@example.com', 'Email', 'jane@example.com')]
+        for value, kind, expected in examples:
+            with self.subTest(kind=kind):
+                scanner = self.scanner(spiderfoot_enabled=True)
+                scanner.engine = Mock()
+                with patch('spectra.providers.request_json', return_value=['SUCCESS', 'test-id']) as start, patch.object(scanner, 'json', side_effect=[['n','t','c','s','e','FINISHED'], []]):
+                    t = target(value, kind)
+                    scanner.spiderfoot(t, [t])
+                payload = urllib.parse.parse_qs(start.call_args.args[3].decode(), keep_blank_values=True)
+                self.assertEqual(payload['usecase'], ['Passive'])
+                self.assertEqual(payload['modulelist'], [''])
+                self.assertEqual(payload['scantarget'], [expected])
+
+    def test_spiderfoot_rejection_has_actionable_reason(self):
+        scanner = self.scanner(spiderfoot_enabled=True)
+        scanner.engine = Mock()
+        with patch('spectra.providers.request_json', return_value=['ERROR', 'Incorrect usage: no modules specified for scan.']):
+            with self.assertRaisesRegex(ProviderError, 'No modules matched'):
+                t = target('Jane Doe', 'Name')
+                scanner.spiderfoot(t, [t])
 
     def test_spiderfoot_stop_on_cancellation(self):
         scanner = self.scanner(spiderfoot_enabled=True)

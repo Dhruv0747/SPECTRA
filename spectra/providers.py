@@ -163,6 +163,7 @@ class Scanner:
         self.warnings = []
         self.sf_scans = []
         self.images = []
+        self.completed_providers = 0
 
     def warn(self, provider, message):
         text = provider + ': ' + message
@@ -219,6 +220,7 @@ class Scanner:
                     self.emit('provider', name)
                     try:
                         pivots.extend(operation(t, path) or [])
+                        self.completed_providers += 1
                         self.emit('provider_done', name)
                     except Exception as exc:
                         # Never propagate raw transport exceptions containing tokens/URLs.
@@ -232,7 +234,10 @@ class Scanner:
         except Exception:
             self.warn('Scan', 'Investigation interrupted by an unexpected error; partial evidence retained.')
         finally:
-            self.emit('done', {'status': 'CANCELLED' if self.cancel.is_set() else ('COMPLETED WITH WARNINGS' if self.warnings else 'COMPLETED'),
+            status = ('CANCELLED' if self.cancel.is_set() else
+                      'FAILED' if self.warnings and not self.completed_providers else
+                      'COMPLETED WITH WARNINGS' if self.warnings else 'COMPLETED')
+            self.emit('done', {'status': status,
                                'warnings': self.warnings})
 
     def dns(self, t, path):
@@ -364,11 +369,22 @@ class Scanner:
         elif t['type'] == 'phone':
             value = '+' + re.sub(r'\D', '', value)
         payload = urllib.parse.urlencode({'scanname': 'SPECTRA-' + str(time.time_ns()), 'scantarget': value,
-                                         'modulelist': '', 'typelist': '', 'usecase': 'passive'}).encode()
+                                         'modulelist': '', 'typelist': '', 'usecase': 'Passive'}).encode()
         # Starting scans is non-idempotent: do not retry the POST.
         result = request_json(base + '/startscan', {'Accept': 'application/json'}, max(30, self.timeout), payload)
         if not isinstance(result, list) or len(result) < 2 or result[0] != 'SUCCESS':
-            raise ProviderError('SpiderFoot did not accept the scan.')
+            reason = 'Unexpected response from the engine.'
+            if isinstance(result, list) and len(result) >= 2 and result[0] == 'ERROR':
+                # Preserve actionable upstream validation errors without reflecting
+                # arbitrary server content, targets or credentials into diagnostics.
+                message = str(result[1]).lower()
+                if 'no modules' in message:
+                    reason = 'No modules matched the selected scan profile.'
+                elif 'target type' in message:
+                    reason = 'The engine did not recognize this target type.'
+                elif 'scan target was not specified' in message:
+                    reason = 'The engine received an empty target.'
+            raise ProviderError('Scan rejected: ' + reason)
         scan_id = str(result[1])
         self.emit('engine_scan', {'id': scan_id, 'server': base})
         seen = set()

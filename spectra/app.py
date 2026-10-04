@@ -17,7 +17,7 @@ BG, PANEL, TEXT, MUTED, ACCENT = '#0b1220', '#121e31', '#e4ecf7', '#95a9c2', '#4
 class SpectraApp(tk.Tk):
     def __init__(self, start_engine=True, root=APP_DIR):
         super().__init__()
-        self.title('SPECTRA · Investigation Workspace')
+        self.title('SPECTRA · Investigation Workspace (0.3.1)')
         self.geometry('1380x850')
         self.minsize(1060, 700)
         self.configure(bg=BG)
@@ -168,6 +168,8 @@ class SpectraApp(tk.Tk):
         ttk.Checkbutton(options, text='Auto pivot to DNS-derived IPs', variable=self.pivot_value).pack(side='left', padx=8)
         self.progress = ttk.Progressbar(page, mode='indeterminate')
         self.progress.pack(fill='x', pady=(8, 12))
+        self.scan_notice = tk.StringVar(value='')
+        ttk.Label(page, textvariable=self.scan_notice, style='Muted.TLabel', wraplength=950).pack(fill='x', pady=(0, 8))
         filters = ttk.Frame(page)
         filters.pack(fill='x', pady=(0, 8))
         ttk.Label(filters, text='Evidence').pack(side='left')
@@ -379,6 +381,7 @@ class SpectraApp(tk.Tk):
             messagebox.showinfo('Archived case', 'Restore the case before scanning.')
             return
         self.cancel.clear()
+        self.scan_notice.set('Starting investigation…')
         self.started_at = time.monotonic()
         self.active_scan = {'id': str(uuid.uuid4()), 'started': now(), 'status': 'RUNNING', 'warnings': [], 'targets': list(self.case['targets']), 'engine_scans': []}
         self.case['scans'].append(self.active_scan)
@@ -416,6 +419,7 @@ class SpectraApp(tk.Tk):
                 elif event == 'warning':
                     self.log(value)
                     if self.active_scan: self.active_scan['warnings'].append(value)
+                    self.scan_notice.set(value)
                     self.connector_states[value.split(':')[0]] = 'RATE LIMITED' if 'RATE LIMITED' in value else ('NOT CONFIGURED' if 'NOT CONFIGURED' in value else 'FAILED')
                 elif event == 'engine_scan' and self.active_scan: self.active_scan['engine_scans'].append(value)
                 elif event == 'engine_status':
@@ -433,6 +437,7 @@ class SpectraApp(tk.Tk):
                     self.active_scan = None
                     self.save_case()
                     self.status.set(value['status'])
+                    self.scan_notice.set('\n'.join(dict.fromkeys(value.get('warnings', []))) or value['status'])
                     self.log(value['status'])
                     changed = True
                 elif event == 'password':
@@ -464,6 +469,9 @@ class SpectraApp(tk.Tk):
         score, counts = risk(self.case)
         for key, value in [('targets', len(self.case['targets'])), ('findings', len(self.case['findings'])), ('high', counts['HIGH']), ('score', str(score) + '/100')]: self.metrics[key].set(str(value))
         self.target_summary.set('Targets: ' + (' · '.join(t['value'] for t in self.case['targets']) or 'none'))
+        if not self.busy() and self.case['scans']:
+            latest = self.case['scans'][-1]
+            self.scan_notice.set('\n'.join(dict.fromkeys(latest.get('warnings', []))) or latest['status'])
         self.overview.configure(state='normal')
         self.overview.delete('1.0', 'end')
         self.overview.insert('end', f"{self.case['name']}\nClient: {self.case['client'] or 'Not specified'}\nScope: {self.case['authorization']}\n\n{len(self.case['scans'])} scan runs · {len(self.case['findings'])} deduplicated findings\n\nExposure indicator: {score}/100. Heuristic: 25 per high, 10 per medium, 3 per low finding, capped at 100. A zero score does not establish safety.\n\n" + '\n'.join(s['started'] + ' · ' + s['status'] for s in self.case['scans'][-6:]))
@@ -730,6 +738,16 @@ class SpectraApp(tk.Tk):
             self.save_case()
             self.engine.close()
             self.destroy()
+
+    def destroy(self):
+        # Cancel timers before removing their Tcl commands, including when tests
+        # open a second root in the same process after closing the first.
+        for callback in self.tk.call('after', 'info'):
+            try:
+                self.after_cancel(callback)
+            except tk.TclError:
+                pass
+        super().destroy()
 
 
 def main():

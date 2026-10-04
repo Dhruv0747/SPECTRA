@@ -2,13 +2,35 @@
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from PIL import Image
 from spectra.app import SpectraApp
 from spectra.core import target, report_html
+from spectra.providers import ProviderError
 
 
 class GuiTests(unittest.TestCase):
+    def test_failed_investigation_shows_provider_reason(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app = SpectraApp(start_engine=False, root=folder)
+            try:
+                app.case = app.store.create('Failure coverage', '', '')
+                app.case['targets'] = [target('Jane Doe', 'Name')]
+                app.settings['spiderfoot_enabled'] = True
+                with patch('spectra.providers.Engine.ensure', side_effect=ProviderError('No modules matched the selected scan profile.')):
+                    app.run_scan()
+                    deadline = time.monotonic() + 5
+                    while app.busy() and time.monotonic() < deadline:
+                        app.update()
+                        time.sleep(.01)
+                self.assertFalse(app.busy())
+                self.assertEqual(app.case['scans'][-1]['status'], 'FAILED')
+                self.assertIn('No modules matched', app.scan_notice.get())
+                self.assertEqual(app.status.get(), 'FAILED')
+            finally:
+                app.on_close()
+
     def test_case_image_scan_graph_and_reopen(self):
         with tempfile.TemporaryDirectory() as folder:
             app = SpectraApp(start_engine=False, root=folder)
