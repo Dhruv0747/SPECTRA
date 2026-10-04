@@ -11,13 +11,14 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from .core import APP_DIR, DEFAULTS, TYPES, CONFIDENCE, CaseStore, atomic_json, target, finding, merge_finding, now, report_html, risk
 from .providers import CATALOG, Engine, Scanner, pwned_password_check
+from .results import results, normalize_finding, finding_details, case_details, PRIORITY
 BG, PANEL, TEXT, MUTED, ACCENT = '#0b1220', '#121e31', '#e4ecf7', '#95a9c2', '#43d9c0'
 
 
 class SpectraApp(tk.Tk):
     def __init__(self, start_engine=True, root=APP_DIR):
         super().__init__()
-        self.title('SPECTRA · Investigation Workspace (0.3.1)')
+        self.title('SPECTRA · Investigation Workspace (0.3.2)')
         self.geometry('1380x850')
         self.minsize(1060, 700)
         self.configure(bg=BG)
@@ -96,7 +97,7 @@ class SpectraApp(tk.Tk):
         tk.Label(sidebar, text='SPECTRA', font=('Segoe UI', 24, 'bold'), fg=ACCENT, bg='#0e192b').pack(anchor='w', padx=22, pady=(30, 2))
         tk.Label(sidebar, text='EXPOSURE INTELLIGENCE', font=('Segoe UI', 8), fg=MUTED, bg='#0e192b').pack(anchor='w', padx=24, pady=(0, 30))
         self.nav = {}
-        for label in ('Dashboard', 'Investigation', 'Cases', 'Graph', 'Reports', 'Connectors', 'Settings', 'Logs'):
+        for label in ('Dashboard', 'Investigation', 'Results', 'Cases', 'Graph', 'Reports', 'Connectors', 'Settings', 'Logs'):
             b = tk.Button(sidebar, text=label, anchor='w', padx=22, pady=12, relief='flat', bd=0, font=('Segoe UI', 11), fg=TEXT, bg='#0e192b', activebackground='#21364d', activeforeground=ACCENT, command=lambda n=label: self.show_page(n))
             b.pack(fill='x', padx=10, pady=2)
             self.nav[label] = b
@@ -132,7 +133,7 @@ class SpectraApp(tk.Tk):
         cards = ttk.Frame(page)
         cards.pack(fill='x', pady=22)
         self.metrics = {}
-        for key, title in [('targets', 'TARGETS'), ('findings', 'FINDINGS'), ('high', 'HIGH PRIORITY'), ('score', 'OBSERVED EXPOSURE')]:
+        for key, title in [('targets', 'TARGETS'), ('findings', 'FINDINGS'), ('high', 'HIGH PRIORITY'), ('score', 'REVIEW STATUS')]:
             card = tk.Frame(cards, bg=PANEL, padx=20, pady=18)
             card.pack(side='left', fill='both', expand=True, padx=(0, 10))
             value = tk.StringVar(value='0')
@@ -142,7 +143,7 @@ class SpectraApp(tk.Tk):
         ttk.Label(page, text='Case overview', font=('Segoe UI', 14, 'bold')).pack(anchor='w', pady=(0, 10))
         self.overview = self.text_widget(page, height=9)
         self.overview.pack(fill='both', expand=True)
-        self.overview.insert('end', 'Start with a named case and an authorization note. Add one or more targets, choose your sources, and run an investigation.\n\nEvidence stays locally beside the application. Provider coverage and failures are shown explicitly. A zero exposure indicator does not establish safety.\n\nLocal image analysis and password checking are available from Investigation.')
+        self.overview.insert('end', 'Start with a named case. Add one or more targets, choose your sources, and run an investigation.\n\nOpen Results to read every finding on one page. Missing observations do not establish safety.\n\nLocal image analysis and password checking are available from Investigation.')
         self.overview.configure(state='disabled')
 
     def _investigation(self, page):
@@ -198,6 +199,28 @@ class SpectraApp(tk.Tk):
         for label, fn in [('+ New case', self.new_case), ('Open selected', self.open_selected_case), ('Import JSON', self.import_case), ('Export current', self.export_case), ('Archive / restore', self.archive_case)]: self.button(row, label, fn)
         self.cases_tree = self.table(page, [('name', 'CASE', 270), ('client', 'CLIENT', 170), ('findings', 'FINDINGS', 90), ('state', 'STATE', 100), ('updated', 'UPDATED (UTC)', 200)])
         self.cases_tree.bind('<Double-1>', lambda _: self.open_selected_case())
+
+    def _results(self, page):
+        row = ttk.Frame(page)
+        row.pack(fill='x', pady=(0, 8))
+        self.button(row, 'Export this report', self.generate_report, True)
+        self.button(row, 'Run another investigation', lambda: self.show_page('Investigation'))
+        ttk.Label(page, text='All details in one place · Source claims are shown separately from verified facts', style='Muted.TLabel').pack(anchor='w', pady=(0, 12))
+        body = ttk.Frame(page)
+        body.pack(fill='both', expand=True)
+        self.results_text = self.text_widget(body)
+        bar = ttk.Scrollbar(body, command=self.results_text.yview)
+        self.results_text.configure(yscrollcommand=bar.set, state='disabled')
+        bar.pack(side='right', fill='y')
+        self.results_text.pack(fill='both', expand=True)
+
+    def refresh_results(self):
+        position = self.results_text.yview()[0]
+        self.results_text.configure(state='normal')
+        self.results_text.delete('1.0', 'end')
+        self.results_text.insert('end', case_details(self.case) if self.case else 'Open a case to see all findings and exposure details here.')
+        self.results_text.configure(state='disabled')
+        self.results_text.yview_moveto(position)
 
     def _graph(self, page):
         row = ttk.Frame(page)
@@ -286,6 +309,7 @@ class SpectraApp(tk.Tk):
         if name == 'Cases': self.refresh_cases()
         if name == 'Connectors': self.refresh_connectors()
         if name == 'Reports': self.refresh_reports()
+        if name == 'Results': self.refresh_results()
         if name == 'Graph': self.after(20, self.draw_graph)
 
     def busy(self):
@@ -439,6 +463,7 @@ class SpectraApp(tk.Tk):
                     self.status.set(value['status'])
                     self.scan_notice.set('\n'.join(dict.fromkeys(value.get('warnings', []))) or value['status'])
                     self.log(value['status'])
+                    if self.current_page == 'Investigation': self.show_page('Results')
                     changed = True
                 elif event == 'password':
                     callback, result = value
@@ -449,7 +474,7 @@ class SpectraApp(tk.Tk):
             self.save_case(notify=False)
         if self.started_at:
             elapsed = int(time.monotonic() - self.started_at)
-            self.status.set(f"{getattr(self, 'current_provider', 'Preparing')} · {elapsed}s · {len(self.case['findings'])} findings · Stop available")
+            self.status.set(f"{getattr(self, 'current_provider', 'Preparing')} · {elapsed}s · {len(results(self.case))} findings · Stop available")
         if self.closing and not self.busy():
             self.save_case()
             self.engine.close()
@@ -467,16 +492,18 @@ class SpectraApp(tk.Tk):
         if not self.case: return
         self.case_label.set(self.case['name'] + '  ·  ' + self.case['id'][:8])
         score, counts = risk(self.case)
-        for key, value in [('targets', len(self.case['targets'])), ('findings', len(self.case['findings'])), ('high', counts['HIGH']), ('score', str(score) + '/100')]: self.metrics[key].set(str(value))
+        items = results(self.case)
+        for key, value in [('targets', len(self.case['targets'])), ('findings', len(items)), ('high', counts['HIGH']), ('score', 'Review' if counts['HIGH'] or counts['MEDIUM'] else 'Unknown')]: self.metrics[key].set(str(value))
         self.target_summary.set('Targets: ' + (' · '.join(t['value'] for t in self.case['targets']) or 'none'))
         if not self.busy() and self.case['scans']:
             latest = self.case['scans'][-1]
             self.scan_notice.set('\n'.join(dict.fromkeys(latest.get('warnings', []))) or latest['status'])
         self.overview.configure(state='normal')
         self.overview.delete('1.0', 'end')
-        self.overview.insert('end', f"{self.case['name']}\nClient: {self.case['client'] or 'Not specified'}\nScope: {self.case['authorization']}\n\n{len(self.case['scans'])} scan runs · {len(self.case['findings'])} deduplicated findings\n\nExposure indicator: {score}/100. Heuristic: 25 per high, 10 per medium, 3 per low finding, capped at 100. A zero score does not establish safety.\n\n" + '\n'.join(s['started'] + ' · ' + s['status'] for s in self.case['scans'][-6:]))
+        self.overview.insert('end', f"{self.case['name']}\nClient: {self.case['client'] or 'Not specified'}\nScope: {self.case['authorization']}\n\n{len(self.case['scans'])} scan runs · {len(items)} findings excluding entered targets\n\n{counts['MEDIUM']} findings need review; {counts['HIGH']} are high priority. See Results for all details. Unverified exposure claims require independent verification. No numerical safety score is assigned.\n\n" + '\n'.join(s['started'] + ' · ' + s['status'] for s in self.case['scans'][-6:]))
         self.overview.configure(state='disabled')
         self.refresh_findings()
+        self.refresh_results()
         if self.current_page == 'Graph': self.draw_graph()
 
     def refresh_findings(self):
@@ -485,22 +512,20 @@ class SpectraApp(tk.Tk):
         self.findings_tree.delete(*self.findings_tree.get_children())
         if not self.case: return
         query, level = self.search_value.get().lower(), self.confidence_value.get()
-        for f in self.case['findings']:
+        for f in results(self.case):
             if query and query not in (f['title'] + ' ' + f['summary'] + ' ' + f['source']).lower(): continue
             if level != 'ALL' and CONFIDENCE[f['confidence']] < CONFIDENCE[level]: continue
-            self.findings_tree.insert('', 'end', iid=f['id'], values=(f['severity'], f['title'], f['source'], f['confidence']))
+            self.findings_tree.insert('', 'end', iid=f['id'], values=(PRIORITY[f['severity']], f['title'], f['source'], f['confidence']))
         if selected and self.findings_tree.exists(selected[0]): self.findings_tree.selection_set(selected[0])
 
     def selected_finding(self):
         sel = self.findings_tree.selection()
-        return next((f for f in self.case['findings'] if sel and f['id'] == sel[0]), None) if self.case else None
+        return next((f for f in results(self.case) if sel and f['id'] == sel[0]), None) if self.case else None
 
     def show_finding(self, event=None):
         f = self.selected_finding()
         if not f: return
-        text = f"{f['title']}\n{f['severity']} priority · {f['confidence']} confidence\n\n{f['summary']}\n\nRecommended action: {f['remediation']}\n\n"
-        for e in f['evidence']:
-            text += f"Source: {e['provider']} · {e['timestamp']}\nReference: {e.get('reference') or 'Local observation'}\nPath: " + ' → '.join(t['value'] for t in e['pivot_path']) + '\n\n'
+        text = finding_details(f)
         self.detail.configure(state='normal')
         self.detail.delete('1.0', 'end')
         self.detail.insert('end', text)
@@ -521,7 +546,7 @@ class SpectraApp(tk.Tk):
         self.cases_tree.delete(*self.cases_tree.get_children())
         cases, errors = self.store.list()
         self.case_index = {c['id']: c for c in cases}
-        for c in cases: self.cases_tree.insert('', 'end', iid=c['id'], values=(c['name'], c['client'], len(c['findings']), 'Archived' if c['archived'] else 'Active', c['updated']))
+        for c in cases: self.cases_tree.insert('', 'end', iid=c['id'], values=(c['name'], c['client'], len(results(c)), 'Archived' if c['archived'] else 'Active', c['updated']))
         if errors: self.status.set(f'{len(errors)} unreadable case files; originals preserved.')
 
     def open_selected_case(self):
@@ -534,7 +559,7 @@ class SpectraApp(tk.Tk):
                 scan['status'] = 'INTERRUPTED'
                 scan.setdefault('warnings', []).append('Previous session ended before completion.')
         self.refresh()
-        self.show_page('Investigation')
+        self.show_page('Results' if results(self.case) else 'Investigation')
 
     def import_case(self):
         if self.busy(): return
@@ -571,7 +596,7 @@ class SpectraApp(tk.Tk):
         if not self.case or not self.case['findings']:
             self.canvas.create_text(320, 180, text='Run an investigation to build the evidence graph.', fill=MUTED, font=('Segoe UI', 13))
             return
-        findings = [f for f in self.case['findings'] if not self.graph_high.get() or f['confidence'] != 'LOW']
+        findings = [f for f in results(self.case) if not self.graph_high.get() or f['confidence'] != 'LOW']
         nodes = {}
         for f in findings:
             nodes[f['subject']['id']] = f['subject']
@@ -597,7 +622,7 @@ class SpectraApp(tk.Tk):
 
     def node_selected(self, node):
         self.graph_selection = node
-        related = [f for f in self.case['findings'] if node['id'] in (f['subject']['id'], f['object']['id'])]
+        related = [f for f in results(self.case) if node['id'] in (f['subject']['id'], f['object']['id'])]
         self.graph_detail.set(node['type'] + ' · ' + node['value'] + f' · {len(related)} related findings')
         win = tk.Toplevel(self)
         win.title('Node evidence')
@@ -782,6 +807,12 @@ def main():
                 app.on_close()
         return
     app = SpectraApp()
+    if '--open-latest' in sys.argv:
+        cases, _ = app.store.list()
+        if cases:
+            app.case = cases[0]
+            app.refresh()
+            app.show_page('Results')
     app.mainloop()
 
 

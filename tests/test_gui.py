@@ -63,6 +63,9 @@ class GuiTests(unittest.TestCase):
                 saved = app.store.load(Path(folder)/'cases'/f"{app.case['id']}.json")
                 self.assertEqual(len(saved['findings']), 3)
                 self.assertIn('Exact image duplicate', report_html(saved))
+                app.show_page('Results')
+                self.assertIn('Exact image duplicate', app.results_text.get('1.0', 'end'))
+                self.assertNotIn('/100', app.overview.get('1.0', 'end'))
                 self.assertFalse(errors, errors)
             finally:
                 app.on_close()

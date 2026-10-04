@@ -1,7 +1,13 @@
 SPECTRA — Digital Exposure & OSINT Auditor
 Powered by Dhruv Kaushik
 
-v0.3.1 INVESTIGATION WORKSPACE
+v0.3.2 INVESTIGATION WORKSPACE
+- Results shows all findings on one scrollable page, including affected identifiers,
+  reported sites/collections, providers, verification, available dates/data categories,
+  provenance and actions. Existing saved cases work without a new scan.
+- Entered targets are excluded from discovery counts. Possible breach associations
+  are marked Needs review. A review status replaces the numerical safety indicator.
+  Missing breach details are explicit; leaked passwords/tokens are not retrieved.
 - Fix: default investigations use SpiderFoot's case-sensitive Passive profile.
   Name, phone and email startup/progress/cancellation have a live acceptance test.
   Rejected sources are visible in Investigation; all-source failure reports FAILED.
