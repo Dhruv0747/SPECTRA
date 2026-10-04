@@ -18,7 +18,7 @@ BG, PANEL, TEXT, MUTED, ACCENT = '#0b1220', '#121e31', '#e4ecf7', '#95a9c2', '#4
 class SpectraApp(tk.Tk):
     def __init__(self, start_engine=True, root=APP_DIR):
         super().__init__()
-        self.title('SPECTRA · Investigation Workspace (0.5.0)')
+        self.title('SPECTRA · Investigation Workspace (0.5.1)')
         self.geometry('1380x850')
         self.minsize(1060, 700)
         self.configure(bg=BG)

@@ -1,7 +1,10 @@
 SPECTRA — Digital Exposure & OSINT Auditor
 Powered by Dhruv Kaushik
 
-v0.5.0 INVESTIGATION WORKSPACE
+v0.5.1 INVESTIGATION WORKSPACE
+- Plain-language client report: what was found, what it means, what to do,
+  and where it came from. Technical connections stay in expandable sections.
+  Pictures are explicitly distinguished from reverse-image search results.
 - Client report: visual profile and exposure cards, clickable evidence sources,
   supplied information separated from observations, technical appendix collapsed.
 - GitHub username searches include public avatars, bios, account dates, websites
