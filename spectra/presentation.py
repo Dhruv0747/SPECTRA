@@ -23,7 +23,7 @@ def link(value, label='Open source'):
 def category(f):
     if f.get('exposure'): return 'Exposure reports'
     if f.get('object', {}).get('type') == 'PROFILE': return 'Public profiles'
-    if f.get('source') == 'Image': return 'Image analysis'
+    if f.get('source') == 'Image' or f.get('relation') == 'POSSIBLE_IMAGE_MATCH': return 'Image analysis'
     return 'Other observations'
 
 
@@ -35,7 +35,16 @@ def client_card(f):
              'An online account to check' if category(f) == 'Public profiles' else f['title'])
     parts = ['<article class="client-card"><h3>' + esc(title) + '</h3>']
     if not exposure: parts.append('<p><b>What we found:</b> ' + esc(f['summary']) + '</p>')
+    if f.get('relation') == 'POSSIBLE_IMAGE_MATCH':
+        thumbnail = safe_url(raw.get('thumbnail'))
+        host = urlsplit(thumbnail).hostname if thumbnail else ''
+        if thumbnail and urlsplit(thumbnail).scheme == 'https' and (host == 'serpapi.com' or host in ('encrypted-tbn0.gstatic.com', 'encrypted-tbn1.gstatic.com', 'encrypted-tbn2.gstatic.com', 'encrypted-tbn3.gstatic.com')):
+            parts.append('<figure><img class="avatar" loading="lazy" referrerpolicy="no-referrer" src="' + esc(thumbnail) + '" alt="Image match preview returned by search"><figcaption>Search-result preview. Open the page to verify it.</figcaption></figure>')
+        parts.append('<p><b>Match reported by the service:</b> ' + esc(raw.get('match_type', '').replace('_', ' ')) + '. Not an independently verified copy or face match.</p>')
+        parts.append('<p>' + link(raw.get('supplied_image'), 'Original image you supplied') + ' · ' + link(f['object']['value'], 'Page where the match was reported') + '</p>')
     if category(f) == 'Public profiles':
+        if raw.get('snippet'): parts.append('<p><b>Search preview:</b> ' + esc(raw['snippet']) + '</p>')
+        if f.get('relation') == 'POSSIBLE_PAGE': parts.append('<p>This can be a profile, post or page; the platform has not confirmed who owns it.</p>')
         parts += ['<p><b>Possible match—not confirmed as the client.</b></p>',
                   '<p><b>What this means:</b> This account may be relevant. A matching username or a linked account does not prove it belongs to you.</p>']
         avatar = safe_url(raw.get('avatar_url'))
@@ -59,7 +68,7 @@ def client_card(f):
     return ''.join(parts)
 
 
-def client_summary(items):
+def client_summary(items, scans=None):
     groups = ['Exposure reports', 'Public profiles', 'Image analysis', 'Other observations']
     sections = []
     for group in groups:
@@ -69,4 +78,6 @@ def client_summary(items):
         else:
             empty = 'No findings returned in this category by the sources checked.'
             sections.append('<h2>' + group + ' (' + str(len(selected)) + ')</h2><div class="cards">' + (''.join(client_card(f) for f in selected) or '<p>' + empty + '</p>') + '</div>')
-    return '<section><h2>Your findings, explained simply</h2><p>Each card explains what was found, what it means, and your next step. Information you supplied is listed separately; it is not counted as something we found online.</p><h3>About the pictures</h3><p>A picture shown here comes directly from a public GitHub profile returned by the search. Open the profile link to see where it appears. It is not proof that the picture is yours.</p><p>Searching the internet for copies of your photo is a different check, called reverse-image search. Web-wide reverse-image search and Instagram photo collection were not performed. No picture shown does not mean your pictures are absent from the internet.</p>' + ''.join(sections) + '</section>'
+    photo_runs = [r for s in (scans or []) for r in s.get('coverage', []) if r.get('provider') == 'Photo Search' and r.get('status') != 'DISABLED']
+    coverage = ('Image-search attempts recorded: ' + ', '.join(r['status'] for r in photo_runs) + '. Review the source coverage for failures and partial results.' if photo_runs else 'Reverse-image searches were not performed in the recorded scans.')
+    return '<section><h2>Your findings, explained simply</h2><p>Each card explains what was found, what it means, and your next step. Information you supplied is listed separately; it is not counted as something we found online.</p><h3>About the pictures</h3><p>GitHub pictures are account avatars. Image-match previews come from Google Lens through SerpApi and link to the reported page. Neither establishes a person\'s identity. No picture shown does not mean your pictures are absent from the internet.</p><p>' + html.escape(coverage) + '</p>' + ''.join(sections) + '</section>'

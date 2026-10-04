@@ -15,8 +15,8 @@ from .presentation import client_summary
 
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent.parent
 CONFIDENCE = {'LOW': 0, 'MEDIUM': 1, 'HIGH': 2, 'CONFIRMED': 3}
-TYPES = ('Auto', 'Name', 'Email', 'Phone', 'Username', 'Domain', 'IP', 'URL', 'Image')
-DEFAULTS = {'shodan_api_key': '', 'hibp_api_key': '', 'spiderfoot_url': 'http://127.0.0.1:5001',
+TYPES = ('Auto', 'Name', 'Email', 'Phone', 'Username', 'Domain', 'IP', 'URL', 'Image', 'Photo URL')
+DEFAULTS = {'shodan_api_key': '', 'hibp_api_key': '', 'serpapi_api_key': '', 'spiderfoot_url': 'http://127.0.0.1:5001',
             'spiderfoot_enabled': True, 'auto_pivot': False, 'pivot_depth': 1,
             'timeout': 12, 'retries': 1, 'developer_mode': False,
             'connectors': ['DNS', 'InternetDB', 'GitHub', 'HIBP', 'Shodan', 'Image']}
@@ -69,10 +69,19 @@ def target(value, kind='Auto'):
         raise ValueError('Enter a supported target.')
     if kind == 'ip':
         value = str(ipaddress.ip_address(value))
-    elif kind == 'url':
+    elif kind in ('url', 'photo url'):
         u = urlsplit(value)
         if u.scheme not in ('http', 'https') or not u.hostname or u.username or u.password:
             raise ValueError('Enter an HTTP(S) URL without credentials.')
+        if kind == 'photo url':
+            if u.scheme != 'https' or '.' not in u.hostname or u.hostname.endswith(('.local', '.localhost')):
+                raise ValueError('Use a public HTTPS image URL.')
+            try:
+                address = ipaddress.ip_address(u.hostname)
+            except ValueError:
+                address = None
+            if address is not None and not address.is_global:
+                raise ValueError('Use a public HTTPS image URL.')
     elif kind == 'domain':
         value = value.lower().rstrip('.')
         if classify_target(value) != 'domain':
@@ -143,7 +152,7 @@ class CaseStore:
         for key in ('timeout', 'retries', 'pivot_depth'):
             if type(result[key]) is not int or result[key] < (1 if key == 'timeout' else 0):
                 raise ValueError('Invalid setting: ' + key)
-        for key in ('shodan_api_key', 'hibp_api_key', 'spiderfoot_url'):
+        for key in ('shodan_api_key', 'hibp_api_key', 'serpapi_api_key', 'spiderfoot_url'):
             if not isinstance(result[key], str):
                 raise ValueError('Invalid setting: ' + key)
         if not isinstance(result['connectors'], list):
@@ -250,7 +259,7 @@ def report_html(case):
     score, counts = risk(case)
     rows = []
     items = results(case)
-    visual_summary = client_summary(items)
+    visual_summary = client_summary(items, case['scans'])
     for f in items:
         evidence = ''.join('<li>' + esc(e['provider']) + ' · ' + esc(e['timestamp']) +
                            ' · ' + esc(e.get('reference', '')) + '<br>Path: ' +

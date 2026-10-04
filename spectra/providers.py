@@ -85,6 +85,8 @@ CATALOG = [
     ('HIBP', 'Email', 'API KEY REQUIRED', 'Have I Been Pwned breach-account exposure'),
     ('Shodan', 'IP', 'API KEY REQUIRED', 'Shodan host enrichment'),
     ('Image', 'Image', 'FREE / LOCAL', 'SHA-256, perceptual hashes, dimensions and EXIF'),
+    ('Social Search', 'Name, Username', 'SERPAPI KEY', 'Indexed Facebook and Instagram pages; possible matches only'),
+    ('Photo Search', 'Photo URL', 'SERPAPI KEY', 'Google Lens exact and visual matches for a public image URL'),
     ('SpiderFoot', 'Name, Email, Phone, Username, Domain, IP', 'LOCAL ENGINE', 'Passive scans, progress, evidence ingestion and stop'),
 ]
 
@@ -172,14 +174,15 @@ class Scanner:
         self.warnings.append(text)
         self.emit('warning', text)
 
-    def json(self, url, headers=None, data=None):
-        for attempt in range(int(self.settings.get('retries', 1)) + 1):
+    def json(self, url, headers=None, data=None, timeout=None, retry=True):
+        retries = int(self.settings.get('retries', 1)) if retry else 0
+        for attempt in range(retries + 1):
             if self.cancel.is_set():
                 raise ProviderError('Cancelled')
             try:
-                return request_json(url, headers, self.timeout, data)
+                return request_json(url, headers, timeout or self.timeout, data)
             except ProviderError as exc:
-                if 'RATE LIMITED' in str(exc) or attempt >= int(self.settings.get('retries', 1)):
+                if 'RATE LIMITED' in str(exc) or attempt >= retries:
                     raise
                 if self.cancel.wait(.5):
                     raise ProviderError('Cancelled')
@@ -211,7 +214,11 @@ class Scanner:
                     jobs.append(('GitHub', self.github))
                 if kind == 'image':
                     jobs.append(('Image', self.image))
-                if self.settings.get('spiderfoot_enabled') and kind != 'image':
+                if kind in ('name', 'username'):
+                    jobs.append(('Social Search', self.social_search))
+                if kind == 'photo url':
+                    jobs.append(('Photo Search', self.photo_search))
+                if self.settings.get('spiderfoot_enabled') and kind not in ('image', 'photo url'):
                     jobs.append(('SpiderFoot', self.spiderfoot))
                 ran = False
                 for name, operation in jobs:
@@ -357,6 +364,62 @@ class Scanner:
                      path, reference=social_url, confidence='LOW', relation='LINKED_PROFILE',
                      object_type='PROFILE', object_value=link,
                      remediation='Review the source profile and destination before attributing either account to the client.')
+        return []
+
+    def search_api(self, parameters):
+        key = self.settings.get('serpapi_api_key', '').strip()
+        if not key:
+            raise ProviderError('NOT CONFIGURED — add your SerpApi key in Settings.')
+        # No raw response metadata or request URL is retained: both may contain the key.
+        data = self.json('https://serpapi.com/search.json?' + urllib.parse.urlencode({**parameters, 'api_key': key}), timeout=max(60, self.timeout), retry=False)
+        if not isinstance(data, dict) or data.get('error') or data.get('search_metadata', {}).get('status') not in (None, 'Success'):
+            raise ProviderError('Search service did not complete the request. Check your key, credits and supplied target.')
+        return data
+
+    def social_search(self, t, path):
+        query = '"' + t['value'].replace('"', '') + '" (site:instagram.com OR site:facebook.com)'
+        data = self.search_api({'engine': 'google', 'q': query})
+        rows = data.get('organic_results', [])
+        if not isinstance(rows, list): raise ProviderError('Search returned invalid results.')
+        count = 0
+        for row in rows:
+            link = row.get('link', '')
+            parsed = urllib.parse.urlsplit(link)
+            host = (parsed.hostname or '').lower()
+            if parsed.scheme != 'https' or parsed.username or parsed.password or not any(host == d or host.endswith('.' + d) for d in ('instagram.com', 'facebook.com')):
+                continue
+            self.add('Possible social page', 'Social Search', t,
+                     {'summary': str(row.get('title') or 'Indexed social page'), 'snippet': str(row.get('snippet') or ''),
+                      'query': query, 'match_basis': 'Search-engine text match. This may be a post, page or profile belonging to someone else.'},
+                     path, reference=link, confidence='LOW', relation='POSSIBLE_PAGE', object_type='PROFILE', object_value=link,
+                     remediation='Open this page and compare independent details. Do not assume account ownership from the name or username alone.')
+            count += 1
+        self.add('Social search coverage', 'Social Search', t,
+                 {'summary': f'{count} Facebook/Instagram page candidates returned on the first results page. This is not a complete search of either platform.', 'query': query},
+                 path, reference='https://serpapi.com/search-api')
+        return []
+
+    def photo_search(self, t, path):
+        target(t['value'], 'Photo URL')
+        for mode in ('exact_matches', 'visual_matches'):
+            data = self.search_api({'engine': 'google_lens', 'url': t['value'], 'type': mode})
+            rows = data.get(mode, [])
+            if not isinstance(rows, list): raise ProviderError('Image search returned invalid results.')
+            count = 0
+            for row in rows:
+                link = row.get('link', '')
+                parsed = urllib.parse.urlsplit(link)
+                if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password: continue
+                raw = {k: str(row.get(k) or '') for k in ('title', 'source', 'thumbnail')}
+                raw.update(summary=str(row.get('title') or 'Possible image match'), match_type=mode,
+                           supplied_image=t['value'], match_basis='Provider-reported image match; not a verified face or identity match.')
+                self.add('Reported exact image match' if mode == 'exact_matches' else 'Visually similar image', 'Photo Search', t,
+                         raw, path, reference=link, confidence='LOW', relation='POSSIBLE_IMAGE_MATCH', object_type='IMAGE_PAGE', object_value=link,
+                         remediation='Open the original page and compare the images. Similar appearance does not establish the same person or ownership.')
+                count += 1
+            self.add('Image search coverage: ' + mode, 'Photo Search', t,
+                     {'summary': f'{count} results returned for {mode.replace("_", " ")} on the first page. Unindexed and private pages may be missing.'},
+                     path, reference='https://serpapi.com/google-lens-api')
         return []
 
     def hibp(self, t, path):

@@ -18,7 +18,7 @@ BG, PANEL, TEXT, MUTED, ACCENT = '#0b1220', '#121e31', '#e4ecf7', '#95a9c2', '#4
 class SpectraApp(tk.Tk):
     def __init__(self, start_engine=True, root=APP_DIR):
         super().__init__()
-        self.title('SPECTRA · Investigation Workspace (0.5.1)')
+        self.title('SPECTRA · Investigation Workspace (0.6.0)')
         self.geometry('1380x850')
         self.minsize(1060, 700)
         self.configure(bg=BG)
@@ -158,6 +158,7 @@ class SpectraApp(tk.Tk):
         ttk.Combobox(inputs, values=TYPES, textvariable=self.target_type, width=12, state='readonly').pack(side='left', padx=(0, 8))
         self.button(inputs, 'Add target', self.add_target, True)
         self.target_summary = tk.StringVar(value='No targets added')
+        ttk.Label(page, text='Photo URL: paste a public HTTPS image address and select Photo URL. With Photo Search enabled, this URL is sent to SerpApi / Google Lens. Local Add image stays local.', style='Muted.TLabel', wraplength=950).pack(anchor='w')
         ttk.Label(page, textvariable=self.target_summary, style='Muted.TLabel', wraplength=950).pack(anchor='w', pady=(0, 5))
         options = ttk.Frame(page)
         options.pack(fill='x')
@@ -288,7 +289,7 @@ class SpectraApp(tk.Tk):
 
     def _settings(self, page):
         self.setting_vars = {}
-        for label, key, secret in [('Shodan API key', 'shodan_api_key', True), ('HIBP API key', 'hibp_api_key', True), ('SpiderFoot URL', 'spiderfoot_url', False)]:
+        for label, key, secret in [('Shodan API key', 'shodan_api_key', True), ('HIBP API key', 'hibp_api_key', True), ('SerpApi key', 'serpapi_api_key', True), ('SpiderFoot URL', 'spiderfoot_url', False)]:
             row = ttk.Frame(page)
             row.pack(fill='x', pady=6)
             ttk.Label(row, text=label, width=22).pack(side='left')
@@ -296,6 +297,8 @@ class SpectraApp(tk.Tk):
             self.setting_vars[key] = v
             ttk.Entry(row, textvariable=v, show='•' if secret else '').pack(side='left', fill='x', expand=True)
         ttk.Label(page, text='Keys stay in local config/settings.json; excluded from case exports, reports and Git.', style='Muted.TLabel', wraplength=900).pack(anchor='w', pady=12)
+        ttk.Label(page, text='SerpApi: enable Social Search and/or Photo Search below. Sends the supplied name/username or public image URL to the service and uses your account credits. First-page results only.', style='Muted.TLabel', wraplength=900).pack(anchor='w')
+        self.button(page, 'SerpApi account / key', lambda: webbrowser.open('https://serpapi.com/manage-api-key'))
         for label, key in [('Enable SpiderFoot passive engine', 'spiderfoot_enabled'), ('Developer mode: diagnostic controls', 'developer_mode')]:
             v = tk.BooleanVar(value=self.settings.get(key, False))
             self.setting_vars[key] = v
@@ -308,7 +311,7 @@ class SpectraApp(tk.Tk):
             if name == 'SpiderFoot': continue
             v = tk.BooleanVar(value=name in self.settings.get('connectors', []))
             self.source_vars[name] = v
-            ttk.Checkbutton(source_row, text=name, variable=v).pack(side='left', padx=(0, 12))
+            ttk.Checkbutton(source_row, text=name, variable=v).grid(row=(len(self.source_vars)-1)//5, column=(len(self.source_vars)-1)%5, sticky='w', padx=8)
         self.dev_frame = ttk.Frame(page)
         for label, key in [('Pivot depth', 'pivot_depth'), ('Request timeout (seconds)', 'timeout'), ('Retries after transient errors', 'retries')]:
             row = ttk.Frame(self.dev_frame)
@@ -714,6 +717,7 @@ class SpectraApp(tk.Tk):
             state = self.connector_states.get(name, 'READY' if name == 'Image' else 'NOT CHECKED')
             if not enabled: state = 'DISABLED'
             elif name in ('Shodan', 'HIBP') and not self.settings.get(name.lower() + '_api_key'): state = 'NOT CONFIGURED'
+            elif name in ('Social Search', 'Photo Search') and not self.settings.get('serpapi_api_key'): state = 'NOT CONFIGURED'
             self.connectors_tree.insert('', 'end', values=(name, access, state, types, description))
 
     def save_settings(self):

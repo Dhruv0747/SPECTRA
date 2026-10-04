@@ -1,7 +1,17 @@
 SPECTRA — Digital Exposure & OSINT Auditor
 Powered by Dhruv Kaushik
 
-v0.5.1 INVESTIGATION WORKSPACE
+v0.6.0 INVESTIGATION WORKSPACE
+- SerpApi integration (account key required, disabled until enabled in Settings):
+  Social Search searches indexed Facebook/Instagram pages using Name or Username.
+  Photo Search queries Google Lens exact and visual matches using Photo URL.
+  Add a public HTTPS image URL explicitly as Photo URL; local Add image does not
+  upload images. The service receives the query/image URL and consumes credits.
+  Each scan uses one social query or two Lens queries per target, first page only.
+  Search requests may take 60 seconds and are not automatically retried.
+  Matches are unverified; private/unindexed content and face identity are not covered.
+  Enter the key locally in Settings, enable the desired sources, then Save settings.
+  Docs: https://serpapi.com/search-api and https://serpapi.com/google-lens-api
 - Plain-language client report: what was found, what it means, what to do,
   and where it came from. Technical connections stay in expandable sections.
   Pictures are explicitly distinguished from reverse-image search results.
@@ -9,8 +19,8 @@ v0.5.1 INVESTIGATION WORKSPACE
   supplied information separated from observations, technical appendix collapsed.
 - GitHub username searches include public avatars, bios, account dates, websites
   and social links published by the account. Links are not proof of ownership.
-  Report avatars load from GitHub when viewed online; no reverse-image search
-  or Instagram image collection is performed.
+  Report avatars load from GitHub when viewed online. Image-search previews load
+  from SerpApi/Google when available, with links to the original result pages.
 - Free DNS enrichment for emails, domains and URLs: A, AAAA, MX, NS, TXT and
   DMARC queries. Email lookup sends only the domain to Google Public DNS;
   these observations do not verify mailbox existence or personal identity.
