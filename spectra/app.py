@@ -18,7 +18,7 @@ BG, PANEL, TEXT, MUTED, ACCENT = '#0b1220', '#121e31', '#e4ecf7', '#95a9c2', '#4
 class SpectraApp(tk.Tk):
     def __init__(self, start_engine=True, root=APP_DIR):
         super().__init__()
-        self.title('SPECTRA · Investigation Workspace (0.3.2)')
+        self.title('SPECTRA · Investigation Workspace (0.4.0)')
         self.geometry('1380x850')
         self.minsize(1060, 700)
         self.configure(bg=BG)
@@ -205,6 +205,13 @@ class SpectraApp(tk.Tk):
         row.pack(fill='x', pady=(0, 8))
         self.button(row, 'Export this report', self.generate_report, True)
         self.button(row, 'Run another investigation', lambda: self.show_page('Investigation'))
+        self.results_query = tk.StringVar()
+        search = ttk.Entry(row, textvariable=self.results_query, width=24)
+        search.pack(side='left', padx=8)
+        search.bind('<Return>', lambda _: self.find_in_results())
+        self.button(row, 'Find next', self.find_in_results)
+        self.results_match = tk.StringVar()
+        ttk.Label(page, textvariable=self.results_match).pack(anchor='w')
         ttk.Label(page, text='All details in one place · Source claims are shown separately from verified facts', style='Muted.TLabel').pack(anchor='w', pady=(0, 12))
         body = ttk.Frame(page)
         body.pack(fill='both', expand=True)
@@ -214,7 +221,28 @@ class SpectraApp(tk.Tk):
         bar.pack(side='right', fill='y')
         self.results_text.pack(fill='both', expand=True)
 
+    def find_in_results(self):
+        text = self.results_text
+        query = self.results_query.get().strip()
+        text.tag_remove('match', '1.0', 'end')
+        if not query:
+            self.results_match.set('Enter a search term')
+            return
+        start = getattr(self, 'results_search_end', '1.0')
+        found = text.search(query, start, stopindex='end', nocase=True)
+        if not found: found = text.search(query, '1.0', stopindex=start, nocase=True)
+        if not found:
+            self.results_match.set('No match')
+            return
+        end = f'{found}+{len(query)}c'
+        text.tag_add('match', found, end)
+        text.tag_configure('match', background='#ffe08a', foreground='#101c31')
+        text.see(found)
+        self.results_search_end = text.index(end)
+        self.results_match.set('Match highlighted')
+
     def refresh_results(self):
+        self.results_search_end = '1.0'
         position = self.results_text.yview()[0]
         self.results_text.configure(state='normal')
         self.results_text.delete('1.0', 'end')

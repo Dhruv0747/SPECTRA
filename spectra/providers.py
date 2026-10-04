@@ -79,7 +79,7 @@ def image_metadata(path):
 
 
 CATALOG = [
-    ('DNS', 'Domain, URL', 'FREE API', 'Public DNS over HTTPS; A and AAAA records'),
+    ('DNS', 'Domain, URL, Email', 'FREE API', 'Public addresses, mail servers, nameservers and domain policies'),
     ('InternetDB', 'IP', 'FREE API', 'Shodan InternetDB observed services and vulnerability references'),
     ('GitHub', 'Username', 'FREE API', 'Public GitHub profile; does not establish identity'),
     ('HIBP', 'Email', 'API KEY REQUIRED', 'Have I Been Pwned breach-account exposure'),
@@ -164,6 +164,8 @@ class Scanner:
         self.sf_scans = []
         self.images = []
         self.completed_providers = 0
+        self.coverage = []
+        self.finding_count = 0
 
     def warn(self, provider, message):
         text = provider + ': ' + message
@@ -183,6 +185,7 @@ class Scanner:
                     raise ProviderError('Cancelled')
 
     def add(self, title, source, t, raw, path, **kwargs):
+        self.finding_count += 1
         self.emit('finding', finding(title, source, t, raw, path=path, **kwargs))
 
     def run(self, targets):
@@ -198,7 +201,7 @@ class Scanner:
                 pivots = []
                 kind = t['type']
                 jobs = []
-                if kind in ('domain', 'url'):
+                if kind in ('domain', 'url', 'email'):
                     jobs.append(('DNS', self.dns))
                 if kind == 'ip':
                     jobs.extend([('InternetDB', self.internetdb), ('Shodan', self.shodan)])
@@ -214,18 +217,29 @@ class Scanner:
                 for name, operation in jobs:
                     if self.cancel.is_set():
                         break
+                    coverage = {'provider': name, 'target': dict(t), 'status': 'DISABLED', 'findings': 0}
+                    self.coverage.append(coverage)
                     if name != 'SpiderFoot' and name not in self.settings.get('connectors', []):
                         continue
+                    before = self.finding_count
+                    started = time.monotonic()
+                    coverage['status'] = 'RUNNING'
                     ran = True
                     self.emit('provider', name)
                     try:
                         pivots.extend(operation(t, path) or [])
+                        coverage['status'] = 'COMPLETED'
                         self.completed_providers += 1
                         self.emit('provider_done', name)
                     except Exception as exc:
+                        coverage['status'] = 'CANCELLED' if self.cancel.is_set() else 'FAILED'
                         # Never propagate raw transport exceptions containing tokens/URLs.
                         if not self.cancel.is_set():
                             self.warn(name, str(exc) if isinstance(exc, ProviderError) else 'Provider failed; no results assumed.')
+                    finally:
+                        if self.cancel.is_set(): coverage['status'] = 'CANCELLED'
+                        coverage['findings'] = self.finding_count - before
+                        coverage['seconds'] = round(time.monotonic() - started, 1)
                 if not ran:
                     self.warn('Coverage', f'No enabled provider supports {kind}. Target saved without fabricated findings.')
                 if self.settings.get('auto_pivot') and depth < int(self.settings.get('pivot_depth', 1)):
@@ -238,29 +252,50 @@ class Scanner:
                       'FAILED' if self.warnings and not self.completed_providers else
                       'COMPLETED WITH WARNINGS' if self.warnings else 'COMPLETED')
             self.emit('done', {'status': status,
-                               'warnings': self.warnings})
+                               'warnings': self.warnings, 'coverage': self.coverage})
 
     def dns(self, t, path):
         domain = urllib.parse.urlsplit(t['value']).hostname if t['type'] == 'url' else t['value']
+        if t['type'] == 'email': domain = t['value'].rsplit('@', 1)[1]
+        domain = domain.encode('idna').decode('ascii').lower().rstrip('.')
         dt = target(domain, 'Domain')
         if t['type'] == 'url':
             self.add('URL host', 'DNS', t, {'summary': f'URL host is {domain}.'}, path,
                      relation='HOSTED_ON', object_type='DOMAIN', object_value=domain)
-        pivots = []
-        for qtype in ('A', 'AAAA'):
-            url = 'https://dns.google/resolve?' + urllib.parse.urlencode({'name': domain, 'type': qtype})
-            data = self.json(url)
-            if data.get('Status') not in (0, 3):
-                raise ProviderError('DNS resolver could not complete the query.')
-            for row in data.get('Answer', []):
+        pivots, failures = [], []
+        for qtype in ('A', 'AAAA', 'MX', 'NS', 'TXT', 'DMARC'):
+            name = '_dmarc.' + domain if qtype == 'DMARC' else domain
+            number = {'A': 1, 'AAAA': 28, 'MX': 15, 'NS': 2, 'TXT': 16, 'DMARC': 16}[qtype]
+            url = 'https://dns.google/resolve?' + urllib.parse.urlencode({'name': name, 'type': number, 'edns_client_subnet': '0.0.0.0/0'})
+            try:
+                data = self.json(url)
+                if data.get('Status') not in (0, 3) or data.get('TC'):
+                    raise ProviderError('DNS resolver could not complete the query.')
+            except ProviderError:
+                if self.cancel.is_set(): raise
+                failures.append(qtype)
+                continue
+            matched = [r for r in data.get('Answer', []) if r.get('type') == number]
+            if not matched:
+                self.add('DNS ' + qtype + ' coverage', 'DNS', dt,
+                         {'summary': f'No {qtype} records returned for {name}; mailbox existence and ownership are not established.'}, path,
+                         reference=url, object_type='DNS_QUERY', object_value=name + '/' + qtype)
+            for row in matched:
+                if row.get('type') in (2, 15, 16):
+                    value = str(row['data'])
+                    self.add('DNS ' + qtype + ' record', 'DNS', dt,
+                             {'summary': f'{domain}: {qtype} {value}', 'record_value': value,
+                              'ttl_seconds': row.get('TTL'), 'dnssec_validated': bool(data.get('AD'))}, path,
+                             reference=url, relation='PUBLISHES', object_type='DNS_RECORD', object_value=value,
+                             remediation='Domain records do not verify a mailbox, its owner, or security posture.')
                 if row.get('type') in (1, 28):
                     ip = str(ipaddress.ip_address(row['data']))
                     self.add('DNS address', 'DNS', dt, {'summary': f'{domain} resolves to {ip}.', 'record': row}, path,
                              reference=url, relation='RESOLVES_TO', object_type='IP', object_value=ip,
                              remediation='Confirm that this infrastructure belongs in the assessment scope.')
                     pivots.append(target(ip, 'IP'))
-        if not pivots:
-            self.add('No DNS address returned', 'DNS', dt, {'summary': 'The resolver returned no A or AAAA records.'}, path)
+        if failures:
+            raise ProviderError('Incomplete DNS coverage: ' + ', '.join(failures) + '. Successful records retained.')
         return pivots
 
     def internetdb(self, t, path):

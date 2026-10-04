@@ -216,6 +216,13 @@ class CaseStore:
                 raise ValueError('Invalid scan history.')
             if not isinstance(s.get('warnings', []), list) or not all(isinstance(w, str) for w in s.get('warnings', [])):
                 raise ValueError('Invalid scan warnings.')
+            if not isinstance(s.get('coverage', []), list):
+                raise ValueError('Invalid source coverage.')
+            for row in s.get('coverage', []):
+                if (not isinstance(row, dict) or not all(isinstance(row.get(k), str) for k in ('provider', 'status'))
+                    or not isinstance(row.get('target'), dict) or not isinstance(row['target'].get('value'), str)
+                    or type(row.get('findings')) is not int):
+                    raise ValueError('Invalid source coverage record.')
         for r in c['reports']:
             if not isinstance(r, dict) or not all(isinstance(r.get(k), str) for k in ('name', 'created')):
                 raise ValueError('Invalid report history.')
@@ -252,6 +259,7 @@ def report_html(case):
     relationships = ''.join('<li>' + esc(f['subject']['value']) + ' → ' + esc(f['relation']) + ' → ' + esc(f['object']['value']) + '</li>'
                             for f in items if f['subject']['id'] != f['object']['id'])
     scans = ''.join('<li>' + esc(s.get('started', '')) + ' · ' + esc(s.get('status', '')) + ' · ' + esc('; '.join(s.get('warnings', []))) + '</li>' for s in case['scans'])
+    scans += ''.join('<li>' + esc(row['provider']) + ' · ' + esc(row['target']['value']) + ' · ' + esc(row['status']) + ' · ' + str(row['findings']) + ' evidence records</li>' for row in (case['scans'][-1] if case['scans'] else {}).get('coverage', []))
     return f'''<!doctype html><html lang="en"><meta charset="utf-8"><title>SPECTRA · {esc(case['name'])}</title>
 <style>body{{font:15px/1.6 Segoe UI,Arial;background:#f3f5fa;color:#182338;max-width:1040px;margin:40px auto;padding:0 24px}}header{{background:#101c31;color:white;padding:32px;border-radius:14px}}h1{{letter-spacing:5px}}section{{background:white;padding:24px;margin:16px 0;border:1px solid #dce3ee;border-radius:10px}}.tag{{color:#356483;font-weight:bold}}pre{{white-space:pre-wrap;overflow-wrap:anywhere}}li{{overflow-wrap:anywhere}}@media print{{body{{background:white;margin:0}}details{{display:block}}section{{break-inside:avoid}}}}</style>
 <header><h1>SPECTRA</h1><p>Digital Exposure &amp; OSINT Auditor · Powered by Dhruv Kaushik</p><h2>{esc(case['name'])}</h2><p>Client: {esc(case['client'])} · Generated {esc(now())}</p></header>

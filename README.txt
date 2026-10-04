@@ -1,7 +1,12 @@
 SPECTRA — Digital Exposure & OSINT Auditor
 Powered by Dhruv Kaushik
 
-v0.3.2 INVESTIGATION WORKSPACE
+v0.4.0 INVESTIGATION WORKSPACE
+- Free DNS enrichment for emails, domains and URLs: A, AAAA, MX, NS, TXT and
+  DMARC queries. Email lookup sends only the domain to Google Public DNS;
+  these observations do not verify mailbox existence or personal identity.
+- Results has Find next and per-source coverage, timing and evidence counts.
+  Partial DNS failures retain successful observations and are reported explicitly.
 - Results shows all findings on one scrollable page, including affected identifiers,
   reported sites/collections, providers, verification, available dates/data categories,
   provenance and actions. Existing saved cases work without a new scan.

@@ -65,6 +65,13 @@ class GuiTests(unittest.TestCase):
                 self.assertIn('Exact image duplicate', report_html(saved))
                 app.show_page('Results')
                 self.assertIn('Exact image duplicate', app.results_text.get('1.0', 'end'))
+                app.results_query.set('Exact image duplicate')
+                app.find_in_results()
+                self.assertTrue(app.results_text.tag_ranges('match'))
+                app.results_query.set('absent-search-text')
+                app.find_in_results()
+                self.assertEqual(app.results_match.get(), 'No match')
+                self.assertEqual(saved['scans'][-1]['coverage'][0]['status'], 'COMPLETED')
                 self.assertNotIn('/100', app.overview.get('1.0', 'end'))
                 self.assertFalse(errors, errors)
             finally:

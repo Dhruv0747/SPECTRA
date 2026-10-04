@@ -86,6 +86,11 @@ def case_details(case):
     latest = case['scans'][-1] if case['scans'] else None
     lines += ['', 'LATEST SCAN', latest['status'] if latest else 'No scan recorded']
     if latest: lines += latest.get('warnings', [])
+    lines += ['', 'SOURCE COVERAGE']
+    for row in (latest or {}).get('coverage', []):
+        lines.append(f"{row['provider']} | {row['target']['value']} | {row['status']} | {row['findings']} evidence records | {row.get('seconds', 0)}s")
+    if not (latest or {}).get('coverage'):
+        lines.append('Per-source coverage was not recorded for this older scan.')
     lines += ['', 'ALL FINDING DETAILS', '']
     if not items: lines.append('No discoveries yet. Review source coverage; this is not evidence of safety.')
     for index, f in enumerate(items, 1):
